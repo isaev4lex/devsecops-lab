@@ -64,3 +64,4 @@ generic-local/devsecops-app/<rev>/
 - The build revision is stored in `.rev`, so subsequent steps reuse the same tag.
 - `make gate` fails on HIGH/CRITICAL vulnerabilities (exit code 2).
 - All scripts are idempotent where possible.
+# Trigger CI

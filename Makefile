@@ -40,6 +40,7 @@ artifacts:
 publish: push
 
 report:
+	@mkdir -p reports
 	@python3 scripts/report.py > reports/report.md
 
 ci: build scan sbom gate publish report artifacts

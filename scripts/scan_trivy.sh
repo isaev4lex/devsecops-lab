@@ -8,8 +8,8 @@ fi
 
 IMAGE="$1"
 OUT="$2"
-TMPDIR="$(mktemp -d)"
-trap 'rm -rf "$TMPDIR"' EXIT
+
+mkdir -p "$(dirname "$OUT")"
 
 echo "Scanning image: ${IMAGE}"
 echo "Output file: ${OUT}"
@@ -21,20 +21,48 @@ check_critical() {
       return 2
     fi
   else
-    if grep -i "\"Severity\": *\"CRITICAL\"" -q "$file"; then
+    if grep -qi '"Severity"\s*:\s*"CRITICAL"' "$file"; then
       return 2
     fi
   fi
   return 0
 }
 
+run_trivy_local() {
+  trivy image --format json "$IMAGE" > "$OUT"
+}
+
+run_trivy_container() {
+  echo "Local trivy not found — using containerized trivy"
+  docker pull aquasec/trivy:latest >/dev/null
+  docker run --rm \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    aquasec/trivy:latest \
+    image --format json "$IMAGE" > "$OUT"
+}
+
+set +e
 if command -v trivy >/dev/null 2>&1; then
   echo "Using local trivy CLI"
-  trivy image --format json --output "$OUT" "$IMAGE" || true
+  run_trivy_local
+  rc=$?
 else
-  echo "Local trivy not found — using containerized trivy"
-  docker pull aquasec/trivy:latest
-  docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD":"$PWD" -w "$PWD" aquasec/trivy:latest image --format json --output "$OUT" "$IMAGE" || true
+  run_trivy_container
+  rc=$?
+fi
+set -e
+
+if [ $rc -ne 0 ]; then
+  echo "ERROR: trivy exited with code $rc" >&2
+  if [ ! -s "$OUT" ]; then
+    echo "ERROR: Trivy output missing or empty: $OUT" >&2
+    exit $rc
+  fi
+fi
+
+if [ ! -s "$OUT" ]; then
+  echo "ERROR: Trivy output missing or empty: $OUT" >&2
+  exit 1
 fi
 
 echo "Scan finished. Checking CRITICAL vulnerabilities..."

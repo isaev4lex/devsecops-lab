@@ -1,0 +1,76 @@
+name: DevSecOps CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build-and-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Verify Docker is available
+        run: |
+          set -euxo pipefail
+          docker version
+          docker info
+
+      - name: Install Trivy (dockerized wrapper)
+        run: |
+          set -euxo pipefail
+          sudo tee /usr/local/bin/trivy >/dev/null <<'EOF'
+          #!/usr/bin/env bash
+          exec docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$HOME/.cache/trivy":/root/.cache/ \
+            aquasec/trivy:latest "$@"
+          EOF
+          sudo chmod +x /usr/local/bin/trivy
+          trivy --version
+
+      - name: Install Syft (dockerized wrapper)
+        run: |
+          set -euxo pipefail
+          sudo tee /usr/local/bin/syft >/dev/null <<'EOF'
+          #!/usr/bin/env bash
+          exec docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD":/work -w /work \
+            anchore/syft:latest "$@"
+          EOF
+          sudo chmod +x /usr/local/bin/syft
+          syft version
+
+      - name: Validate secrets (fail fast)
+        env:
+          ART_URL: ${{ secrets.ART_URL }}
+          ART_USER: ${{ secrets.ART_USER }}
+          ART_TOKEN: ${{ secrets.ART_TOKEN }}
+        run: |
+          set -euo pipefail
+          for v in ART_URL ART_USER ART_TOKEN; do
+            if [ -z "${!v:-}" ]; then
+              echo "::error title=Missing secret::$v is not set"; exit 1;
+            fi
+          done
+
+      # - name: Debug via SSH (tmate)
+      #   if: ${{ always() }}
+      #   uses: mxschmitt/action-tmate@v3
+      #   with:
+      #     limit-access-to-actor: true
+
+      - name: Run pipeline
+        run: make ci
+        env:
+          ART_URL: ${{ secrets.ART_URL }}
+          ART_USER: ${{ secrets.ART_USER }}
+          ART_TOKEN: ${{ secrets.ART_TOKEN }}
