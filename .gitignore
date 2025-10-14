@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+
+# Environment
+.env
+# Artifacts
+trivy.json
+sbom.cdx.json
+
+reports/
+sbom/
