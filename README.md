@@ -12,7 +12,7 @@ Docker and nothing else. JFrog Artifactory is an optional target.
 
 For every image the pipeline pushes:
 
-- **Traceable tag.** The tag is the short git commit (`8a1f457b1cde`), with
+- **Traceable tag.** The tag is the short git commit (`98c8128386fb`), with
   `-dirty` appended if tracked files had uncommitted changes. The full commit
   SHA is in the `org.opencontainers.image.revision` label and `GET /version`
   returns the tag. Outside a git checkout the tag is a UTC timestamp.
@@ -61,9 +61,10 @@ flowchart LR
 | `make ci` | All of the above; the report is written even when the gate fails | |
 
 Trivy, Syft and the local registry run from images pinned by version and digest
-(`scripts/lib.sh`). The tool containers run as your user, with a read-only root
-filesystem, no capabilities, `no-new-privileges`, and only their inputs mounted
-read-only. None of them gets `/var/run/docker.sock`.
+(`scripts/lib.sh`). The Trivy and Syft containers run as your user, with a
+read-only root filesystem, no capabilities and `no-new-privileges`; their
+inputs are mounted read-only and the only writable mount is Trivy's database
+cache (`.cache/trivy`). None of them gets `/var/run/docker.sock`.
 
 ## Gate policy
 
@@ -148,8 +149,9 @@ make check                    # shellcheck + pytest
 ```
 
 The tests cover the app endpoints and healthcheck command, the gate policy
-(thresholds, secrets, waivers and their expiry, malformed input) by running
-`gate.sh` against generated Trivy reports, and the report rendering.
+(thresholds, secrets, waivers and their expiry, malformed input, the committed
+`.trivyignore`) by running `gate.sh` against generated Trivy reports, and the
+report rendering. They do not need Docker; `make ci` is the end-to-end check.
 
 ## Publish to JFrog Artifactory
 
@@ -221,14 +223,14 @@ dependencies.
 
 | Item | Value |
 |---|---|
-| Image | `devsecops-app:8a1f457b1cde` |
-| Commit | `8a1f457b1cde6edf1a1f46835b68d236d1567447` |
-| Image ID | `sha256:2b10daf20aecef389a6ae40e15c0c39f5e3c4a2b5396de4f24654e851576a102` |
+| Image | `devsecops-app:98c8128386fb` |
+| Commit | `98c8128386fbbed75c3edc431360110900c96b5b` |
+| Image ID | `sha256:276100318d92d5bb4e8afcc3d39e0aecbc5dee8b38c4986f7f22584d4e82c672` |
 | Base OS | debian 13.7 |
 | Platform | linux/arm64 |
 | User | `65532:65532` |
-| Scanned | 2026-10-05T11:56:58Z with Trivy 0.74.0 |
-| Published | `devsecops-app@sha256:731fbab1ee0ca0da17dbe3bab62724c55abc31075ba12d957169aa08e03d631d` (local registry localhost:5050) |
+| Scanned | 2026-10-05T16:22:26Z with Trivy 0.74.0 |
+| Published | `devsecops-app@sha256:f97d68130424a0c1aff6975b64914f542e3ebf56789f4be65bc441e2604e8236` (local registry localhost:5050) |
 
 ## Gate: PASS
 
@@ -254,6 +256,7 @@ HIGH and CRITICAL findings:
 | Severity | ID | Package | Installed | Fixed | Status |
 |---|---|---|---|---|---|
 | HIGH | CVE-2026-66046 | libexpat1 | 2.8.3-1~deb13u1 | - | affected |
+| HIGH | CVE-2026-76956 | libexpat1 | 2.8.3-1~deb13u1 | - | affected |
 | HIGH | CVE-2026-15308 | libpython3.13-minimal | 3.13.5-2+deb13u5 | - | affected |
 | ... | | | | | |
 
