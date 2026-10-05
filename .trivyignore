@@ -1,0 +1,12 @@
+# Waivers for the vulnerability gate (scripts/gate.sh), in Trivy's .trivyignore
+# format, so `trivy --ignorefile .trivyignore` reads the same file.
+#
+# One finding ID per line, followed by an expiry date. The gate rejects entries
+# without one, and an entry stops applying after its date, so every waiver comes
+# back for review. Write the reason, the owner and a ticket in the comment above
+# the entry. Secrets can be waived by their Trivy rule ID the same way.
+#
+# Example:
+#   # libfoo heap overflow, only reachable through a parser the app never calls.
+#   # No Debian fix yet. Owner: alex. Ticket: #12.
+#   CVE-2026-12345 exp:2026-12-31
