@@ -1,6 +1,7 @@
 import json
 import socket
 import threading
+import time
 import urllib.error
 import urllib.request
 
@@ -61,6 +62,26 @@ def test_unknown_paths_return_404(port, path):
     status, _, body = request(port, path)
     assert status == 404
     assert json.loads(body) == {"error": "not found"}
+
+
+@pytest.mark.parametrize("method", ["POST", "PUT", "DELETE"])
+def test_other_methods_are_not_implemented(port, method):
+    status, _, _ = request(port, "/health", method=method)
+    assert status == 501
+
+
+def test_connections_have_a_socket_timeout():
+    assert main.Handler.timeout == main.REQUEST_TIMEOUT
+    assert 0 < main.REQUEST_TIMEOUT <= 30
+
+
+def test_idle_connection_is_closed(port, monkeypatch):
+    # Shortened so the test is quick; the default is checked above.
+    monkeypatch.setattr(main.Handler, "timeout", 0.5)
+    with socket.create_connection(("127.0.0.1", port), timeout=5) as sock:
+        started = time.monotonic()
+        assert sock.recv(1024) == b""  # the server closed the connection
+        assert time.monotonic() - started < 4
 
 
 def test_log_line_escapes_control_characters(port, capsys):

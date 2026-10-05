@@ -3,7 +3,9 @@
 Endpoints:
   GET /health   200 {"status": "ok"}
   GET /version  200 {"revision": "<git revision baked in at build time>"}
-Anything else returns 404.
+HEAD works on both. Unknown paths return 404 {"error": "not found"}. Methods
+other than GET and HEAD get the standard library's 501 response.
+A connection that sends nothing for REQUEST_TIMEOUT seconds is closed.
 
 `python main.py healthcheck` probes /health on the local port and exits 0 or 1.
 The container HEALTHCHECK uses it because the runtime image has no shell or curl.
@@ -19,6 +21,7 @@ from urllib.parse import urlsplit
 
 REVISION = os.environ.get("APP_REVISION", "unknown")
 DEFAULT_PORT = 3000
+REQUEST_TIMEOUT = 10
 
 # C0 and C1 control characters, written as \xNN in log lines (as the stdlib
 # handler does), so a crafted request line cannot forge log lines or send
@@ -37,6 +40,9 @@ class Handler(BaseHTTPRequestHandler):
     # Do not advertise the Python version in the Server header.
     server_version = "devsecops-app"
     sys_version = ""
+    # Socket timeout per connection. The server runs one thread per connection,
+    # so without it an idle or very slow client holds a thread forever.
+    timeout = REQUEST_TIMEOUT
 
     def _respond(self, include_body):
         payload = _routes().get(urlsplit(self.path).path)
