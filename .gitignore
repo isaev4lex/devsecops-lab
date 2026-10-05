@@ -17,9 +17,12 @@ htmlcov/
 .env.*
 !.env.example
 
-# Pipeline outputs (image tarball, scan results, SBOM, SARIF, gate, reports)
+# Pipeline outputs (image tarball, scan results, SBOM, SARIF, gate, reports).
+# The tarball and SARIF are also ignored when OUT points somewhere else.
 build/
 dist/
+*.tar
+*.sarif
 
 # Scanner cache (Trivy vulnerability DB)
 .cache/

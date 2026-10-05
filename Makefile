@@ -6,6 +6,8 @@
 export
 
 IMAGE_NAME          ?= devsecops-app
+# Pipeline outputs. build/ is gitignored; if you change OUT, keep it under
+# build/ or outside the repository so the outputs cannot be committed.
 OUT                 ?= build
 TRIVYIGNORE         ?= .trivyignore
 LOCAL_REGISTRY_PORT ?= 5050
