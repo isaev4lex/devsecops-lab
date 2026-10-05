@@ -46,7 +46,7 @@ endif
 
 .DEFAULT_GOAL := help
 .PHONY: help ci build smoke scan sbom sarif gate publish report upload sign bootstrap \
-        lint lint-workflows test check clean registry-down
+        lint lint-workflows test check clean clean-cache registry-down
 
 help: ## Show this help
 	@echo "Targets (REV=$(REV), PUBLISH=$(PUBLISH)):"
@@ -110,6 +110,9 @@ check: lint test ## lint + test
 
 clean: ## Remove pipeline outputs
 	rm -rf $(OUT)
+
+clean-cache: ## Remove the Trivy database cache in .cache/ (about 1.4 GB)
+	rm -rf .cache
 
 registry-down: ## Stop and remove the throwaway local registry
 	-docker rm --force devsecops-lab-registry

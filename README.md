@@ -127,7 +127,9 @@ make ci
 This pulls the pinned Trivy, Syft and registry images, builds and checks the
 image, starts a registry container named `devsecops-lab-registry` on
 `127.0.0.1:5050` (storage in a tmpfs) and pushes to it. A run with warm caches
-takes about 10 seconds; the first run also downloads the Trivy database.
+takes about 10 seconds. The first run also downloads the Trivy database, which
+takes about 1.4 GB in `.cache/trivy` (gitignored; `make clean-cache` removes
+it).
 
 Pull the image back by digest:
 
@@ -142,6 +144,7 @@ make help                     # list targets
 make build smoke scan gate    # run some stages only
 make ci PUBLISH=none          # skip the push
 make registry-down clean      # remove the registry container and build/
+make clean-cache              # remove the Trivy database cache
 ```
 
 Tests and lint (`shellcheck` from `brew install shellcheck` or
