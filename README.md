@@ -146,6 +146,7 @@ Tests and lint (`shellcheck` from `brew install shellcheck` or
 python3 -m venv .venv
 .venv/bin/pip install --require-hashes -r requirements-dev.txt
 make check                    # shellcheck + pytest
+make lint-workflows           # actionlint on the CI workflow (runs in Docker)
 ```
 
 The tests cover the app endpoints and healthcheck command, the gate policy
@@ -176,8 +177,9 @@ make ci                 # publishes to JFrog when all three variables are set
 `.github/workflows/ci.yml` runs on pushes and pull requests to `main`, weekly
 on Monday, and on demand.
 
-1. **test**: shellcheck and pytest on Python 3.13, the version in the image.
-   Test dependencies are installed with `--require-hashes`.
+1. **test**: `make lint`, `make lint-workflows` and `make test`: shellcheck,
+   actionlint and pytest on Python 3.13, the version in the image. Test
+   dependencies are installed with `--require-hashes`.
 2. **pipeline**: the `make ci` targets, one step each, so a failure points at
    a stage.
    - Publishes to JFrog only for pushes to `main` when the `ART_URL`,
@@ -293,8 +295,9 @@ tests/               pytest: app, gate policy, report
 - No SLSA provenance is produced or verified. Signing is opt-in, runs only for
   JFrog pushes from CI, and the pipeline does not verify signatures before
   deploying anything (there is no deploy stage).
-- The Trivy, Syft and registry image pins in `scripts/lib.sh` are not seen by
-  Dependabot and have to be bumped by hand.
+- The Trivy, Syft and registry image pins in `scripts/lib.sh` and the
+  actionlint pin in the `Makefile` are not seen by Dependabot and have to be
+  bumped by hand.
 - The JFrog and signing paths need credentials, so pull request CI does not
   exercise them.
 - The local registry is plain HTTP on 127.0.0.1 without authentication. It is

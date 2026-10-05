@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   test:
-    name: shellcheck and pytest
+    name: shellcheck, actionlint and pytest
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -43,6 +43,9 @@ jobs:
           command -v shellcheck >/dev/null || { sudo apt-get update -q && sudo apt-get install -y -q shellcheck; }
           shellcheck --version
           make lint
+
+      - name: actionlint (pinned image, no network)
+        run: make lint-workflows
 
       - name: pytest
         run: make test

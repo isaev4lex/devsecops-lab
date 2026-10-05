@@ -12,6 +12,8 @@ LOCAL_REGISTRY_PORT ?= 5050
 ART_DOCKER_REPO     ?= docker-local
 ART_GENERIC_REPO    ?= generic-local
 PYTHON              ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
+# Workflow linter, pinned by version and digest like the tool images in scripts/lib.sh.
+ACTIONLINT_IMAGE    ?= rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
 
 # Image tag: the short git commit, plus "-dirty" when tracked files have
 # uncommitted changes. Outside a git checkout it falls back to a UTC timestamp.
@@ -41,7 +43,7 @@ endif
 
 .DEFAULT_GOAL := help
 .PHONY: help ci build smoke scan sbom sarif gate publish report upload sign bootstrap \
-        lint test check clean registry-down
+        lint lint-workflows test check clean registry-down
 
 help: ## Show this help
 	@echo "Targets (REV=$(REV), PUBLISH=$(PUBLISH)):"
@@ -92,6 +94,11 @@ bootstrap: ## Create the JFrog docker and generic repositories if missing
 
 lint: ## shellcheck all scripts
 	shellcheck -x scripts/*.sh
+
+lint-workflows: ## actionlint on .github/workflows (Docker, pinned image, no network)
+	docker run --rm --quiet --network none --read-only --cap-drop ALL \
+		--security-opt no-new-privileges --user "$$(id -u):$$(id -g)" \
+		--volume "$(CURDIR):/repo:ro" --workdir /repo $(ACTIONLINT_IMAGE) -color=false
 
 test: ## pytest (app endpoints, gate policy, report)
 	$(PYTHON) -m pytest

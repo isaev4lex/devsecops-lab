@@ -1,6 +1,7 @@
 # Keeps the pins fresh: action SHAs, the base image digest and the
 # hash-pinned test dependencies. The scanner and registry images in
-# scripts/lib.sh are bumped by hand (Dependabot does not read shell scripts).
+# scripts/lib.sh and the actionlint image in the Makefile are bumped by hand
+# (Dependabot does not read shell scripts or Makefiles).
 version: 2
 updates:
   - package-ecosystem: github-actions
