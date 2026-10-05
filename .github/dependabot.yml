@@ -1,0 +1,22 @@
+# Keeps the pins fresh: action SHAs, the base image digest and the
+# hash-pinned test dependencies. The scanner and registry images in
+# scripts/lib.sh are bumped by hand (Dependabot does not read shell scripts).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /app
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: monthly

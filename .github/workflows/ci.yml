@@ -1,76 +1,189 @@
-name: DevSecOps CI
+name: ci
 
 on:
   push:
-    branches: ["main"]
+    branches: [main]
   pull_request:
-    branches: ["main"]
+    branches: [main]
+  # Weekly rescan of main: the same image can fail once new CVEs are published.
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+# Jobs get only the permissions they ask for below.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Third-party actions are pinned to full commit SHAs (tags can be moved).
+# Dependabot keeps the pins and the version comments current.
 
 jobs:
-  build-and-scan:
-    runs-on: ubuntu-latest
-
+  test:
+    name: shellcheck and pytest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13" # same minor version as the runtime image
 
-      - name: Verify Docker is available
+      - name: Install test dependencies (hash-checked)
+        run: python -m pip install --require-hashes -r requirements-dev.txt
+
+      - name: shellcheck
         run: |
-          set -euxo pipefail
-          docker version
-          docker info
+          command -v shellcheck >/dev/null || { sudo apt-get update -q && sudo apt-get install -y -q shellcheck; }
+          shellcheck --version
+          make lint
 
-      - name: Install Trivy (dockerized wrapper)
+      - name: pytest
+        run: make test
+
+  pipeline:
+    name: build, scan, gate, publish
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to code scanning
+    outputs:
+      publish: ${{ steps.target.outputs.publish }}
+      digest: ${{ steps.publish.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Choose publish target
+        id: target
+        env:
+          HAS_JFROG: ${{ secrets.ART_URL != '' && secrets.ART_USER != '' && secrets.ART_TOKEN != '' }}
         run: |
-          set -euxo pipefail
-          sudo tee /usr/local/bin/trivy >/dev/null <<'EOF'
-          #!/usr/bin/env bash
-          exec docker run --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v "$HOME/.cache/trivy":/root/.cache/ \
-            aquasec/trivy:latest "$@"
-          EOF
-          sudo chmod +x /usr/local/bin/trivy
-          trivy --version
+          # JFrog only for pushes to main with credentials configured. Pull
+          # requests, forks and clones without secrets push to a throwaway
+          # registry on the runner instead, so the whole pipeline still runs.
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ] && [ "$HAS_JFROG" = true ]; then
+            target=jfrog
+          else
+            target=local
+          fi
+          echo "PUBLISH=$target" >> "$GITHUB_ENV"
+          echo "publish=$target" >> "$GITHUB_OUTPUT"
+          echo "day=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+          echo "Publish target: $target"
 
-      - name: Install Syft (dockerized wrapper)
+      - name: Cache Trivy vulnerability DB
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/trivy
+          key: trivy-db-${{ steps.target.outputs.day }}
+          restore-keys: trivy-db-
+
+      - name: Build image
+        run: make build
+
+      - name: Smoke test (read-only, non-root, healthcheck)
+        run: make smoke
+
+      - name: Scan (Trivy)
+        id: scan
+        run: make scan
+
+      - name: SBOM (Syft)
+        run: make sbom
+
+      - name: SARIF
+        run: make sarif
+
+      - name: Gate
+        run: make gate
+
+      - name: Publish (${{ steps.target.outputs.publish }})
+        id: publish
+        env:
+          # Credentials reach this step only when publishing to JFrog.
+          ART_URL: ${{ steps.target.outputs.publish == 'jfrog' && secrets.ART_URL || '' }}
+          ART_USER: ${{ steps.target.outputs.publish == 'jfrog' && secrets.ART_USER || '' }}
+          ART_TOKEN: ${{ steps.target.outputs.publish == 'jfrog' && secrets.ART_TOKEN || '' }}
+        run: make publish
+
+      - name: Report
+        if: ${{ !cancelled() && steps.scan.outcome == 'success' }}
         run: |
-          set -euxo pipefail
-          sudo tee /usr/local/bin/syft >/dev/null <<'EOF'
-          #!/usr/bin/env bash
-          exec docker run --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v "$PWD":/work -w /work \
-            anchore/syft:latest "$@"
-          EOF
-          sudo chmod +x /usr/local/bin/syft
-          syft version
+          make report
+          cat build/report.md >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Validate secrets (fail fast)
+      - name: Upload results to JFrog
+        if: steps.target.outputs.publish == 'jfrog'
         env:
           ART_URL: ${{ secrets.ART_URL }}
           ART_USER: ${{ secrets.ART_USER }}
           ART_TOKEN: ${{ secrets.ART_TOKEN }}
-        run: |
-          set -euo pipefail
-          for v in ART_URL ART_USER ART_TOKEN; do
-            if [ -z "${!v:-}" ]; then
-              echo "::error title=Missing secret::$v is not set"; exit 1;
-            fi
-          done
+        run: make upload
 
-      # - name: Debug via SSH (tmate)
-      #   if: ${{ always() }}
-      #   uses: mxschmitt/action-tmate@v3
-      #   with:
-      #     limit-access-to-actor: true
+      - name: Upload SARIF to code scanning
+        # Runs when the gate fails too, so the findings show up in the Security tab.
+        # Pull requests from forks get a read-only token and skip it.
+        if: >-
+          ${{ !cancelled() && hashFiles('build/trivy.sarif') != '' &&
+          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: build/trivy.sarif
+          category: container-image
 
-      - name: Run pipeline
-        run: make ci
+      - name: Upload SBOM, scan and report
+        if: ${{ !cancelled() && hashFiles('build/trivy.json') != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: supply-chain-${{ github.sha }}
+          path: |
+            build/sbom.cdx.json
+            build/trivy.json
+            build/trivy.sarif
+            build/gate.json
+            build/report.md
+            build/publish.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  sign:
+    name: sign and attest (keyless, opt-in)
+    needs: pipeline
+    # Opt-in with the repository variable SIGN_IMAGES=true. Keyless signing
+    # writes an entry to the public Rekor transparency log.
+    if: needs.pipeline.outputs.publish == 'jfrog' && vars.SIGN_IMAGES == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write # OIDC token for the short-lived Sigstore signing certificate
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: supply-chain-${{ github.sha }}
+          path: build
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign image, attest SBOM, verify both
         env:
+          PUBLISH: jfrog
+          DIGEST: ${{ needs.pipeline.outputs.digest }}
           ART_URL: ${{ secrets.ART_URL }}
           ART_USER: ${{ secrets.ART_USER }}
           ART_TOKEN: ${{ secrets.ART_TOKEN }}
+        run: make sign
