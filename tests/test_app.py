@@ -63,6 +63,16 @@ def test_unknown_paths_return_404(port, path):
     assert json.loads(body) == {"error": "not found"}
 
 
+def test_log_line_escapes_control_characters(port, capsys):
+    # urllib refuses control characters in a URL, so send the request line by hand.
+    with socket.create_connection(("127.0.0.1", port), timeout=5) as sock:
+        sock.sendall(b"GET /\x1b[2J\x08x HTTP/1.0\r\n\r\n")
+        assert sock.recv(1024).startswith(b"HTTP/1.0 404")
+    out = capsys.readouterr().out
+    assert "\x1b" not in out and "\x08" not in out
+    assert "/\\x1b[2J\\x08x" in out
+
+
 def test_server_header_does_not_leak_python_version(port):
     _, headers, _ = request(port, "/health")
     assert "Python" not in headers["Server"]

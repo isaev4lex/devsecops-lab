@@ -20,6 +20,11 @@ from urllib.parse import urlsplit
 REVISION = os.environ.get("APP_REVISION", "unknown")
 DEFAULT_PORT = 3000
 
+# C0 and C1 control characters, written as \xNN in log lines (as the stdlib
+# handler does), so a crafted request line cannot forge log lines or send
+# terminal escape sequences to whoever reads the logs.
+_CONTROL_CHARS = str.maketrans({c: "\\x%02x" % c for c in [*range(0x20), *range(0x7F, 0xA0)]})
+
 
 def _routes():
     return {
@@ -53,8 +58,10 @@ class Handler(BaseHTTPRequestHandler):
         self._respond(include_body=False)
 
     def log_message(self, format, *args):
-        # One line per request on stdout, without the reverse DNS lookup of the default.
-        sys.stdout.write("%s %s\n" % (self.client_address[0], format % args))
+        # One line per request on stdout (the default writes to stderr). Overriding
+        # this drops the stdlib's control-character escaping, so it is redone here.
+        message = (format % args).translate(_CONTROL_CHARS)
+        sys.stdout.write("%s %s\n" % (self.client_address[0], message))
 
 
 def make_server(host, port):
