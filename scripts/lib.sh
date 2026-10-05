@@ -113,6 +113,13 @@ art_host() {
   printf '%s\n' "${host%%/*}"
 }
 
+# In GitHub Actions the full ART_URL secret is masked in logs, but its bare
+# host is not, and tools such as docker and cosign print image references with
+# it. Mask the host too, before any script can print it.
+if [ "${GITHUB_ACTIONS:-}" = "true" ] && [ -n "${ART_URL:-}" ]; then
+  printf '::add-mask::%s\n' "$(art_host)"
+fi
+
 # Repository (without tag) that the image is pushed to for the current PUBLISH mode.
 destination_repo() {
   local name="${IMAGE_NAME:-devsecops-app}"

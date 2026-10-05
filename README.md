@@ -207,8 +207,10 @@ cosign verify \
 
 Workflow hardening: read-only default token permissions with per-job
 additions, every action pinned to a full commit SHA, checkout without
-persisted credentials, and Dependabot for action SHAs, the base image digest
-and the Python test dependencies.
+persisted credentials, the JFrog host masked in the logs (GitHub masks the
+`ART_URL` secret, not the bare host that docker and cosign print), and
+Dependabot for action SHAs, the base image digest and the Python test
+dependencies.
 
 ## Example report
 
