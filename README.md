@@ -26,9 +26,9 @@ For every image the pipeline pushes:
 - **Evidence kept with it.** Scan JSON, SARIF, SBOM, gate decision and a
   Markdown report sit in `build/`, in the CI run artifacts, and in JFrog next
   to the image when publishing there.
-- **Non-root, minimal runtime.** The image runs as uid 65532 on a distroless base (no
-  shell, no package manager) and passes its smoke test with a read-only root
-  filesystem, all capabilities dropped and `no-new-privileges`.
+- **Non-root, minimal runtime.** The image runs as uid 65532 on a distroless
+  base (no shell, no package manager) and passes its smoke test with a
+  read-only root filesystem, all capabilities dropped and `no-new-privileges`.
 
 What it does not cover is listed under [Limitations](#limitations).
 
@@ -292,9 +292,11 @@ tests/               pytest: app, gate policy, report
   metadata). The tag identifies the commit; the digest identifies one build.
 - The image is built for the host architecture only (arm64 on Apple Silicon,
   amd64 in CI).
-- No SLSA provenance is produced or verified. Signing is opt-in, runs only for
-  JFrog pushes from CI, and the pipeline does not verify signatures before
-  deploying anything (there is no deploy stage).
+- The pipeline does not generate or verify SLSA provenance. (With the
+  containerd image store, as in Docker Desktop, BuildKit attaches its own
+  minimal provenance attestation to the image index; nothing checks it.)
+  Signing is opt-in, runs only for JFrog pushes from CI, and the pipeline does
+  not verify signatures before deploying anything (there is no deploy stage).
 - The Trivy, Syft and registry image pins in `scripts/lib.sh` and the
   actionlint pin in the `Makefile` are not seen by Dependabot and have to be
   bumped by hand.
