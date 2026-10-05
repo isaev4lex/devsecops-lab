@@ -56,11 +56,11 @@ flowchart LR
 | `make smoke` | Runs the image read-only, no capabilities; checks non-root user, HEALTHCHECK, `/health`, `/version` | |
 | `make scan` | Trivy on the tarball, vulnerabilities and secrets, no pass/fail; removes results of the previous scan | `trivy.json` |
 | `make sbom` | Syft on the tarball, package-level CycloneDX | `sbom.cdx.json` |
-| `make sarif` | Converts `trivy.json` to SARIF, results point at the Dockerfile `FROM` line | `trivy.sarif` |
+| `make sarif` | Converts the MEDIUM and higher findings in `trivy.json` (`SARIF_SEVERITY`) to SARIF; results point at the Dockerfile `FROM` line, one fingerprint per CVE and package | `trivy.sarif` |
 | `make gate` | Applies the policy, the only pass/fail decision | `gate.json` |
 | `make publish` | Pushes the gated image (`PUBLISH=local\|jfrog\|none`) | `publish.json` |
 | `make report` | Markdown summary of the above | `report.md` |
-| `make upload` | Uploads the files above to the JFrog generic repo | |
+| `make upload` | Uploads the scan, SBOM, SARIF, gate result and report to the JFrog generic repo | |
 | `make ci` | All of the above; the report is written even when the gate fails | |
 
 Trivy, Syft and the local registry run from images pinned by version and digest
