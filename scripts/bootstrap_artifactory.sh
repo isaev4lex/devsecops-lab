@@ -1,55 +1,32 @@
 #!/usr/bin/env bash
+# Create the two Artifactory repositories the pipeline uses, if missing:
+#   $ART_DOCKER_REPO  (default docker-local)   local Docker repository for images
+#   $ART_GENERIC_REPO (default generic-local)  local generic repository for reports
+# Safe to run repeatedly: an existing repository is left as it is.
+# (In the Artifactory REST API, PUT creates a repository and fails if it exists.)
 set -euo pipefail
+# shellcheck source=scripts/lib.sh
+source "$(dirname "$0")/lib.sh"
 
-require_env() {
-  local name="$1"
-  if [ -z "${!name:-}" ]; then
-    echo "ERROR: $name is not set" >&2
-    exit 1
-  fi
-}
-
-require_env "ART_URL"
-require_env "ART_TOKEN"
-
-api() {
-  local method="$1"; shift
-  local path="$1"; shift
-  curl -sS -f -X "$method" \
-    -H "Authorization: Bearer ${ART_TOKEN}" \
-    -H "Content-Type: application/json" \
-    "${ART_URL}/artifactory${path}" "$@"
-}
+require_env ART_URL ART_TOKEN
+require_cmd curl
+api="${ART_URL%/}/artifactory/api/repositories"
 
 ensure_repo() {
-  local key="$1"
-  local payload="$2"
-
-  echo ">> Ensuring repo '${key}' ..."
-  if api GET "/api/repositories/${key}" >/dev/null 2>&1; then
-    echo "   - Exists. Updating (idempotent PUT) ..."
-  else
-    echo "   - Not found. Creating ..."
+  local key="$1" payload="$2"
+  if art_curl --output /dev/null "${api}/${key}" 2>/dev/null; then
+    log "repository ${key} exists, leaving it unchanged"
+    return
   fi
-
-  api PUT "/api/repositories/${key}" --data "${payload}" >/dev/null
-  echo "   - OK"
+  art_curl --request PUT --header "Content-Type: application/json" \
+    --data "$payload" --output /dev/null "${api}/${key}" || die "could not create ${key}"
+  log "created repository ${key}"
 }
 
-docker_local_payload='{
-  "key": "docker-local",
-  "rclass": "local",
-  "packageType": "Docker",
-  "dockerApiVersion": "V2"
-}'
-
-generic_local_payload='{
-  "key": "generic-local",
-  "rclass": "local",
-  "packageType": "Generic"
-}'
-
-ensure_repo "docker-local"  "${docker_local_payload}"
-ensure_repo "generic-local" "${generic_local_payload}"
-
-echo "All good. Repositories are ready."
+docker_repo="${ART_DOCKER_REPO:-docker-local}"
+generic_repo="${ART_GENERIC_REPO:-generic-local}"
+ensure_repo "$docker_repo" \
+  "{\"key\": \"${docker_repo}\", \"rclass\": \"local\", \"packageType\": \"docker\", \"dockerApiVersion\": \"V2\"}"
+ensure_repo "$generic_repo" \
+  "{\"key\": \"${generic_repo}\", \"rclass\": \"local\", \"packageType\": \"generic\"}"
+log "repositories ready"

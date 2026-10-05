@@ -1,43 +1,33 @@
 #!/usr/bin/env bash
+# Upload pipeline outputs (scan, SBOM, SARIF, gate result, report) to the
+# Artifactory generic repository, next to the image they describe:
+#   $ART_GENERIC_REPO/$IMAGE_NAME/<rev>/<file>
+# Each upload sends its SHA-256 so Artifactory rejects a corrupted transfer.
+# Usage: upload_artifacts.sh <rev> <file>...
 set -euo pipefail
+# shellcheck source=scripts/lib.sh
+source "$(dirname "$0")/lib.sh"
 
-# Usage:
-#   ./scripts/upload_artifacts.sh <rev> <files...>
-# Example:
-#   ./scripts/upload_artifacts.sh 20251014171516 trivy.json sbom/sbom.cdx.json reports/report.md
+[ $# -ge 2 ] || die "usage: $0 <rev> <file>..."
+require_env ART_URL ART_TOKEN
+require_cmd curl
+REV="$1"
+shift
+base="${ART_URL%/}/artifactory/${ART_GENERIC_REPO:-generic-local}/${IMAGE_NAME:-devsecops-app}/${REV}"
 
-require_env() {
-  local name="$1"
-  if [ -z "${!name:-}" ]; then
-    echo "ERROR: $name is not set" >&2
-    exit 1
-  fi
-}
-
-require_env "ART_URL"
-require_env "ART_TOKEN"
-
-if [ $# -lt 2 ]; then
-  echo "Usage: $0 <rev> <files...>" >&2
-  exit 1
-fi
-
-REV="$1"; shift
-BASE="${ART_URL%/}/artifactory/generic-local/devsecops-app/${REV}"
-
-echo "Uploading to: ${BASE}"
 uploaded=0
-for f in "$@"; do
-  if [ ! -f "$f" ]; then
-    echo "WARN: skip missing file: $f" >&2
+for file in "$@"; do
+  if [ ! -f "$file" ]; then
+    log "skip missing file: ${file}"
     continue
   fi
-  name="$(basename "$f")"
-  dest="${BASE}/${name}"
-  echo " -> ${name}"
-  curl -sS -f -X PUT -H "Authorization: Bearer ${ART_TOKEN}" \
-       --upload-file "$f" "$dest" >/dev/null
-  uploaded=$((uploaded+1))
+  name="$(basename "$file")"
+  art_curl --request PUT \
+    --header "X-Checksum-Sha256: $(sha256_of "$file")" \
+    --upload-file "$file" \
+    --output /dev/null \
+    "${base}/${name}" || die "upload failed: ${name}"
+  log "uploaded ${name}"
+  uploaded=$((uploaded + 1))
 done
-
-echo "Done. Uploaded files: ${uploaded}"
+log "uploaded ${uploaded} file(s) to ${ART_GENERIC_REPO:-generic-local}/${IMAGE_NAME:-devsecops-app}/${REV}/"

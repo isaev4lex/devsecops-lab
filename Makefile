@@ -1,14 +1,21 @@
-ifneq (,$(wildcard .env))
-include .env
-export
-endif
+# Container supply-chain pipeline: build -> smoke -> scan -> sbom -> sarif -> gate -> publish -> report.
+# `make help` lists the targets. Works with GNU Make 3.81 (the macOS default) and newer.
 
-.PHONY: bootstrap build scan sbom gate push publish report ci
-REGISTRY := $(shell echo $(ART_URL) | sed 's#https\?://##')
-IMAGE_NAME := devsecops-app
-IMG := $(REGISTRY)/docker-local/$(IMAGE_NAME)
+# Optional local settings and JFrog credentials (see .env.example). No quotes around values.
+-include .env
+export
+
+IMAGE_NAME          ?= devsecops-app
+OUT                 ?= build
+TRIVYIGNORE         ?= .trivyignore
+LOCAL_REGISTRY_PORT ?= 5050
+ART_DOCKER_REPO     ?= docker-local
+ART_GENERIC_REPO    ?= generic-local
+PYTHON              ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
+
 # Image tag: the short git commit, plus "-dirty" when tracked files have
 # uncommitted changes. Outside a git checkout it falls back to a UTC timestamp.
+# Computed once and exported, so the recursive make calls in `ci` reuse it.
 ifeq ($(origin REV),undefined)
   GIT_SHORT := $(shell git rev-parse --short=12 HEAD 2>/dev/null)
   ifneq ($(GIT_SHORT),)
@@ -17,36 +24,82 @@ ifeq ($(origin REV),undefined)
     REV := $(shell date -u +%Y%m%d%H%M%S)
   endif
 endif
-export REV
+GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null)
 
-export ART_URL ART_USER ART_TOKEN REGISTRY IMAGE_NAME IMG REV
+# Where `publish` pushes: jfrog when ART_URL, ART_USER and ART_TOKEN are all
+# set, otherwise a throwaway local registry. Override with PUBLISH=local|jfrog|none.
+ifeq ($(origin PUBLISH),undefined)
+  ifneq ($(and $(ART_URL),$(ART_USER),$(ART_TOKEN)),)
+    PUBLISH := jfrog
+  else
+    PUBLISH := local
+  endif
+endif
+ifeq ($(filter $(PUBLISH),local jfrog none),)
+  $(error PUBLISH must be local, jfrog or none, got "$(PUBLISH)")
+endif
 
-bootstrap:
-	@bash scripts/bootstrap_artifactory.sh
+.DEFAULT_GOAL := help
+.PHONY: help ci build smoke scan sbom sarif gate publish report upload sign bootstrap \
+        lint test check clean registry-down
 
-build:
+help: ## Show this help
+	@echo "Targets (REV=$(REV), PUBLISH=$(PUBLISH)):"
+	@awk 'BEGIN { FS = ":.*## " } /^[a-z-]+:.*## / { printf "  %-14s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+
+ci: ## Whole pipeline. The report is written even when the gate fails.
+	@$(MAKE) --no-print-directory build smoke scan sbom sarif
+	@rc=0; \
+	$(MAKE) --no-print-directory gate || rc=$$?; \
+	if [ $$rc -eq 0 ]; then $(MAKE) --no-print-directory publish || rc=$$?; fi; \
+	$(MAKE) --no-print-directory report || [ $$rc -ne 0 ] || rc=1; \
+	if [ $$rc -eq 0 ] && [ "$(PUBLISH)" = jfrog ]; then $(MAKE) --no-print-directory upload || rc=$$?; fi; \
+	exit $$rc
+
+build: ## Build the image as IMAGE_NAME:REV and save it to build/image.tar
 	@bash scripts/build_image.sh
 
-scan:
-	@bash scripts/scan_trivy.sh "$(IMG):$(REV)" trivy.json
+smoke: ## Run the image read-only and non-root; check HEALTHCHECK, /health and /version
+	@bash scripts/smoke_test.sh "$(IMAGE_NAME):$(REV)" "$(REV)"
 
-sbom:
-	@bash scripts/generate_sbom.sh "$(IMG):$(REV)" sbom/sbom.cdx.json
+scan: ## Trivy scan of the tarball -> build/trivy.json (no pass/fail here)
+	@bash scripts/scan_trivy.sh $(OUT)/image.tar $(OUT)/trivy.json
 
-gate:
-	@bash scripts/gate.sh trivy.json policy
+sbom: ## Syft CycloneDX SBOM of the tarball -> build/sbom.cdx.json
+	@bash scripts/generate_sbom.sh $(OUT)/image.tar $(OUT)/sbom.cdx.json "$(IMAGE_NAME)" "$(REV)"
 
-push:
-	@bash scripts/publish.sh "$(IMG):$(REV)"
+sarif: ## Convert the scan to SARIF for GitHub code scanning -> build/trivy.sarif
+	@bash scripts/to_sarif.sh $(OUT)/trivy.json $(OUT)/trivy.sarif
 
-artifacts:
-	@bash scripts/upload_artifacts.sh "$(REV)" trivy.json sbom/sbom.cdx.json reports/report.md
+gate: ## Apply the vulnerability policy to build/trivy.json -> build/gate.json
+	@bash scripts/gate.sh $(OUT)/trivy.json $(TRIVYIGNORE)
 
+publish: ## Push the gated image (PUBLISH=local|jfrog|none) -> build/publish.json
+	@bash scripts/publish.sh
 
-publish: push
+report: ## Markdown summary of scan, gate, SBOM and publish -> build/report.md
+	@$(PYTHON) scripts/report.py --dir $(OUT) --out $(OUT)/report.md
 
-report:
-	@mkdir -p reports
-	@python3 scripts/report.py > reports/report.md
+upload: ## Upload scan, SBOM, SARIF, gate result and report to the JFrog generic repo
+	@bash scripts/upload_artifacts.sh "$(REV)" $(OUT)/trivy.json $(OUT)/sbom.cdx.json \
+		$(OUT)/trivy.sarif $(OUT)/gate.json $(OUT)/report.md
 
-ci: build scan sbom gate publish report artifacts
+sign: ## Keyless cosign signature + SBOM attestation (GitHub Actions only, needs DIGEST)
+	@bash scripts/sign_image.sh
+
+bootstrap: ## Create the JFrog docker and generic repositories if missing
+	@bash scripts/bootstrap_artifactory.sh
+
+lint: ## shellcheck all scripts
+	shellcheck -x scripts/*.sh
+
+test: ## pytest (app endpoints, gate policy, report)
+	$(PYTHON) -m pytest
+
+check: lint test ## lint + test
+
+clean: ## Remove pipeline outputs
+	rm -rf $(OUT)
+
+registry-down: ## Stop and remove the throwaway local registry
+	-docker rm --force devsecops-lab-registry
