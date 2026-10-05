@@ -1,75 +1,34 @@
 #!/usr/bin/env bash
+# Scan a saved image tarball with Trivy (vulnerabilities and secrets) and write
+# the full JSON result. This script makes no pass/fail decision: gate.sh does.
+# Usage: scan_trivy.sh <image.tar> <output.json>
+# Env: TRIVY_CACHE_DIR (default .cache/trivy) holds the vulnerability DB between runs.
 set -euo pipefail
+# shellcheck source=scripts/lib.sh
+source "$(dirname "$0")/lib.sh"
 
-if [ $# -lt 2 ]; then
-  echo "Usage: $0 <image:tag> <output.json>" >&2
-  exit 1
-fi
+[ $# -eq 2 ] || die "usage: $0 <image.tar> <output.json>"
+TAR="$1"
+OUT_FILE="$2"
+CACHE_DIR="${TRIVY_CACHE_DIR:-.cache/trivy}"
+require_cmd docker jq
+[ -s "$TAR" ] || die "image tarball not found: ${TAR} (run 'make build' first)"
+mkdir -p "$CACHE_DIR"
 
-IMAGE="$1"
-OUT="$2"
+log "scanning ${TAR} with ${TRIVY_IMAGE%%@*}"
+run_to_file "$OUT_FILE" docker run "${TOOL_RUN_FLAGS[@]}" \
+  --env HOME=/tmp \
+  --env TRIVY_DISABLE_TELEMETRY=true \
+  --env TRIVY_SKIP_VERSION_CHECK=true \
+  --volume "$(abspath "$TAR"):/in/image.tar:ro" \
+  --volume "$(abspath "$CACHE_DIR"):/cache" \
+  "$TRIVY_IMAGE" image \
+  --input /in/image.tar \
+  --cache-dir /cache \
+  --scanners vuln,secret \
+  --no-progress \
+  --format json \
+  || die "trivy scan failed"
 
-mkdir -p "$(dirname "$OUT")"
-
-echo "Scanning image: ${IMAGE}"
-echo "Output file: ${OUT}"
-
-check_critical() {
-  local file="$1"
-  if command -v jq >/dev/null 2>&1; then
-    if jq -e '.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")' "$file" >/dev/null 2>&1; then
-      return 2
-    fi
-  else
-    if grep -qi '"Severity"\s*:\s*"CRITICAL"' "$file"; then
-      return 2
-    fi
-  fi
-  return 0
-}
-
-run_trivy_local() {
-  trivy image --format json "$IMAGE" > "$OUT"
-}
-
-run_trivy_container() {
-  echo "Local trivy not found — using containerized trivy"
-  docker pull aquasec/trivy:latest >/dev/null
-  docker run --rm \
-    -v /var/run/docker.sock:/var/run/docker.sock \
-    aquasec/trivy:latest \
-    image --format json "$IMAGE" > "$OUT"
-}
-
-set +e
-if command -v trivy >/dev/null 2>&1; then
-  echo "Using local trivy CLI"
-  run_trivy_local
-  rc=$?
-else
-  run_trivy_container
-  rc=$?
-fi
-set -e
-
-if [ $rc -ne 0 ]; then
-  echo "ERROR: trivy exited with code $rc" >&2
-  if [ ! -s "$OUT" ]; then
-    echo "ERROR: Trivy output missing or empty: $OUT" >&2
-    exit $rc
-  fi
-fi
-
-if [ ! -s "$OUT" ]; then
-  echo "ERROR: Trivy output missing or empty: $OUT" >&2
-  exit 1
-fi
-
-echo "Scan finished. Checking CRITICAL vulnerabilities..."
-if check_critical "$OUT"; then
-  echo "No CRITICAL vulnerabilities found."
-  exit 0
-else
-  echo "CRITICAL vulnerabilities detected! (exit code 2)"
-  exit 2
-fi
+count="$(jq '[.Results[]? | (.Vulnerabilities // [])[], (.Secrets // [])[]] | length' "$OUT_FILE")"
+log "wrote ${OUT_FILE} (${count} findings, all severities)"
