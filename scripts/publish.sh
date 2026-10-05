@@ -6,10 +6,12 @@
 #   jfrog  $ART_URL, repository $ART_DOCKER_REPO; needs ART_URL, ART_USER, ART_TOKEN
 #   none   skip publishing
 #
-# Before pushing it checks that build/gate.json says "pass" and that the image
-# in build/image.tar is the one Trivy scanned (same config digest). It then
-# loads that tarball and pushes it, so the bytes pushed are the bytes scanned,
-# and reads the manifest back from the registry to check the config digest again.
+# Before pushing it checks that build/gate.json says "pass", that the gate
+# evaluated the current build/trivy.json (gate.json records its SHA-256), and
+# that the image in build/image.tar is the one Trivy scanned (same config
+# digest). It then loads that tarball and pushes it, so the bytes pushed are the
+# bytes scanned, and reads the manifest back from the registry to check the
+# config digest again.
 # Writes build/publish.json with the pushed digest.
 set -euo pipefail
 # shellcheck source=scripts/lib.sh
@@ -33,13 +35,19 @@ fi
 decision="$(jq -r '.decision' "$OUT/gate.json")"
 [ "$decision" = "pass" ] || die "refusing to publish: gate decision is '${decision}'"
 
-# 2. The tarball must be the image that was scanned.
+# 2. The decision must be about the current scan, not an earlier one.
+[ -s "$OUT/trivy.json" ] || die "no scan result at ${OUT}/trivy.json (run 'make scan gate' first)"
+gated_sha="$(jq -r '.input_sha256 // empty' "$OUT/gate.json")"
+[ "$gated_sha" = "$(sha256_of "$OUT/trivy.json")" ] \
+  || die "refusing to publish: ${OUT}/gate.json was not computed from the current ${OUT}/trivy.json; run 'make gate' again"
+
+# 3. The tarball must be the image that was scanned.
 scanned="$(jq -r '.Metadata.ImageID // empty' "$OUT/trivy.json")"
 built="$(tarball_config_digest "$OUT/image.tar")" || die "cannot read image config digest from ${OUT}/image.tar"
 [ "$scanned" = "$built" ] \
   || die "image.tar (${built}) is not the scanned image (${scanned}); run 'make scan gate' again"
 
-# 3. Load exactly those bytes and tag them for the destination.
+# 4. Load exactly those bytes and tag them for the destination.
 src="${IMAGE_NAME}:${REV}"
 docker load --quiet --input "$OUT/image.tar" >/dev/null
 dest_repo="$(destination_repo)"

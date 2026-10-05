@@ -13,7 +13,10 @@
 # blocks again and the gate prints the expired entry.
 #
 # Usage: gate.sh <trivy.json> [ignore-file]
-# Writes the decision as JSON to $GATE_RESULT (default: gate.json next to the input).
+# Writes the decision as JSON to $GATE_RESULT (default: gate.json next to the
+# input), with the image ID and the SHA-256 of the scan it evaluated, so publish
+# can check that the decision belongs to the current scan. Any earlier result is
+# removed first: a failed or invalid run leaves no gate.json behind.
 # Exit codes: 0 pass, 2 policy violation, 1 usage or configuration error.
 set -euo pipefail
 # shellcheck source=scripts/lib.sh
@@ -28,6 +31,7 @@ FAIL_ON="${FAIL_ON_SEVERITY:-CRITICAL}"
 FAIL_ON_FIXABLE="${FAIL_ON_FIXABLE_SEVERITY:-HIGH}"
 RESULT="${GATE_RESULT:-$(dirname "$IN")/gate.json}"
 TODAY="${GATE_TODAY:-$(date -u +%Y-%m-%d)}"
+rm -f "$RESULT"
 require_cmd jq
 
 for setting in FAIL_ON FAIL_ON_FIXABLE; do
@@ -39,6 +43,7 @@ done
 
 [ -s "$IN" ] || die "scan result not found or empty: ${IN}"
 jq -e '.SchemaVersion == 2' "$IN" >/dev/null 2>&1 || die "not a Trivy JSON report (schema 2): ${IN}"
+input_sha256="$(sha256_of "$IN")"
 
 # Parse the waiver file into a JSON array of {id, expires, line}.
 waivers='[]'
@@ -72,17 +77,19 @@ if [ -n "$IGNORE_FILE" ]; then
   done <"$IGNORE_FILE"
 fi
 
-mkdir -p "$(dirname "$RESULT")"
-jq \
+# shellcheck disable=SC2016 # $today, $waivers etc. are jq variables
+run_to_file "$RESULT" jq \
   --arg fail_on "$FAIL_ON" \
   --arg fail_on_fixable "$FAIL_ON_FIXABLE" \
   --arg today "$TODAY" \
   --arg input "$IN" \
+  --arg input_sha256 "$input_sha256" \
   --arg ignore_file "$IGNORE_FILE" \
   --argjson waivers "$waivers" '
   def rank: {"UNKNOWN": 0, "LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4, "NONE": 99}[.];
   ($fail_on | rank) as $any_min
   | ($fail_on_fixable | rank) as $fix_min
+  | (.Metadata.ImageID // null) as $image_id
   | ($waivers | map(select(.expires >= $today))) as $active
   | ($waivers | map(select(.expires < $today))) as $expired
   | ($active | map({key: .id, value: .expires}) | from_entries) as $until
@@ -109,6 +116,8 @@ jq \
       decision: (if ($blocking | length) > 0 then "fail" else "pass" end),
       evaluated_on: $today,
       input: $input,
+      input_sha256: $input_sha256,
+      image_id: $image_id,
       policy: {
         fail_on_severity: $fail_on,
         fail_on_fixable_severity: $fail_on_fixable,
@@ -127,7 +136,7 @@ jq \
       expired_waivers: $expired,
       unused_waivers: ($active | map(select(.id as $id | ($waived | map(.id) | index($id)) == null)))
     }
-  ' "$IN" >"$RESULT"
+  ' "$IN" || die "could not evaluate ${IN}"
 
 # Human-readable summary on stdout.
 jq -r '

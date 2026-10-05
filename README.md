@@ -18,7 +18,9 @@ For every image the pipeline pushes:
   returns the tag. Outside a git checkout the tag is a UTC timestamp.
 - **Scanned and gated.** Trivy scanned it for vulnerabilities and secrets and
   the gate policy below passed. `publish` refuses to run unless
-  `build/gate.json` says `pass`.
+  `build/gate.json` says `pass` and was computed from the current
+  `build/trivy.json` (it records the scan's SHA-256). A new scan removes the
+  previous gate result, and a gate run that fails to evaluate leaves none.
 - **Same bytes as scanned.** The scanners read a `docker save` tarball. Before
   pushing, `publish` checks that the tarball's config digest equals the image
   ID Trivy recorded, loads that tarball, pushes it, then reads the manifest back
@@ -51,7 +53,7 @@ flowchart LR
 |---|---|---|
 | `make build` | Builds `app/Dockerfile` as `devsecops-app:<rev>` with OCI labels, saves it | `image.tar` |
 | `make smoke` | Runs the image read-only, no capabilities; checks non-root user, HEALTHCHECK, `/health`, `/version` | |
-| `make scan` | Trivy on the tarball, vulnerabilities and secrets, no pass/fail | `trivy.json` |
+| `make scan` | Trivy on the tarball, vulnerabilities and secrets, no pass/fail; removes results of the previous scan | `trivy.json` |
 | `make sbom` | Syft on the tarball, package-level CycloneDX | `sbom.cdx.json` |
 | `make sarif` | Converts `trivy.json` to SARIF, results point at the Dockerfile `FROM` line | `trivy.sarif` |
 | `make gate` | Applies the policy, the only pass/fail decision | `gate.json` |
@@ -151,8 +153,11 @@ make lint-workflows           # actionlint on the CI workflow (runs in Docker)
 
 The tests cover the app endpoints and healthcheck command, the gate policy
 (thresholds, secrets, waivers and their expiry, malformed input, the committed
-`.trivyignore`) by running `gate.sh` against generated Trivy reports, and the
-report rendering. They do not need Docker; `make ci` is the end-to-end check.
+`.trivyignore`) by running `gate.sh` against generated Trivy reports, the
+checks `publish.sh` makes before and after a push (failed or stale gate,
+unscanned tarball, wrong image read back) with `docker` replaced by a stub,
+and the report rendering. They do not need Docker; `make ci` is the
+end-to-end check.
 
 ## Publish to JFrog Artifactory
 

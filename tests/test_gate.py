@@ -4,6 +4,7 @@ Each test writes a small Trivy-shaped JSON report, runs the real script with a
 fixed date, and checks the exit code and the gate.json it writes.
 """
 
+import hashlib
 import json
 import os
 import shutil
@@ -87,6 +88,24 @@ def test_counts_by_severity_and_fix_status(tmp_path):
     assert result["counts"]["HIGH"] == {"total": 2, "fixable": 1}
     assert result["counts"]["LOW"] == {"total": 1, "fixable": 0}
     assert [f["id"] for f in result["blocking"]] == ["B"]
+
+
+def test_result_records_the_scan_it_evaluated(tmp_path):
+    report = scan(vuln("CVE-1", "LOW"))
+    report["Metadata"] = {"ImageID": "sha256:" + "a" * 64}
+    _, result = run_gate(tmp_path, report)
+    assert result["input_sha256"] == hashlib.sha256((tmp_path / "trivy.json").read_bytes()).hexdigest()
+    assert result["image_id"] == "sha256:" + "a" * 64
+
+
+def test_failed_run_removes_the_previous_result(tmp_path):
+    # A passing gate.json must not survive a later run that could not evaluate,
+    # or publish would act on the old "pass".
+    _, first = run_gate(tmp_path, scan())
+    assert first["decision"] == "pass"
+    proc, second = run_gate(tmp_path, scan(), FAIL_ON_SEVERITY="SEVERE")
+    assert proc.returncode == 1
+    assert second is None
 
 
 def test_report_without_results_passes(tmp_path):
