@@ -70,11 +70,13 @@ jobs:
         id: target
         env:
           HAS_JFROG: ${{ secrets.ART_URL != '' && secrets.ART_USER != '' && secrets.ART_TOKEN != '' }}
+          WANT_JFROG: ${{ vars.PUBLISH_JFROG == 'true' }}
         run: |
-          # JFrog only for pushes to main with credentials configured. Pull
-          # requests, forks and clones without secrets push to a throwaway
-          # registry on the runner instead, so the whole pipeline still runs.
-          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ] && [ "$HAS_JFROG" = true ]; then
+          # JFrog only for pushes to main, when the repository variable
+          # PUBLISH_JFROG is true and the credentials are configured. Pull
+          # requests, forks and everything else push to a throwaway registry
+          # on the runner instead, so the whole pipeline still runs.
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ] && [ "$WANT_JFROG" = true ] && [ "$HAS_JFROG" = true ]; then
             target=jfrog
           else
             target=local

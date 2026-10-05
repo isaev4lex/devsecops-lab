@@ -202,11 +202,12 @@ on Monday, and on demand.
    dependencies are installed with `--require-hashes`.
 2. **pipeline**: the `make ci` targets, one step each, so a failure points at
    a stage.
-   - Publishes to JFrog only for pushes to `main` when the `ART_URL`,
-     `ART_USER` and `ART_TOKEN` secrets exist. Pull requests, forks and the
-     weekly run push to a local registry on the runner, so they run the whole
-     pipeline without secrets. Credentials are passed only to the steps that
-     use them.
+   - Publishes to JFrog only for pushes to `main`, and only when the
+     repository variable `PUBLISH_JFROG` is `true` and the `ART_URL`,
+     `ART_USER` and `ART_TOKEN` secrets exist. Everything else, including pull
+     requests, forks and the weekly run, pushes to a local registry on the
+     runner, so it runs the whole pipeline without secrets. Credentials are
+     passed only to the steps that use them.
    - Uploads `trivy.sarif` to GitHub code scanning, also when the gate fails
      (skipped for pull requests from forks, whose token is read-only).
    - Keeps the SBOM, scan, SARIF, gate result and report as the workflow
