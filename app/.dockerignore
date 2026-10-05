@@ -1,0 +1,3 @@
+# The build context is app/. Send only what the Dockerfile copies.
+*
+!main.py
