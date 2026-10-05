@@ -15,7 +15,8 @@ For every image the pipeline pushes:
 - **Traceable tag.** The tag is the short git commit (`98c8128386fb`), with
   `-dirty` appended if tracked files had uncommitted changes. The full commit
   SHA is in the `org.opencontainers.image.revision` label and `GET /version`
-  returns the tag. Outside a git checkout the tag is a UTC timestamp.
+  returns the tag. Outside a git checkout (for example a downloaded archive)
+  the tag is `src-` plus a hash of `app/Dockerfile` and `app/main.py`.
 - **Scanned and gated.** Trivy scanned it for vulnerabilities and secrets and
   the gate policy below passed. `publish` refuses to run unless
   `build/gate.json` says `pass` and was computed from the current

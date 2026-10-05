@@ -16,14 +16,17 @@ PYTHON              ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python
 ACTIONLINT_IMAGE    ?= rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
 
 # Image tag: the short git commit, plus "-dirty" when tracked files have
-# uncommitted changes. Outside a git checkout it falls back to a UTC timestamp.
+# uncommitted changes. Outside a git checkout (e.g. a downloaded archive) it is
+# "src-" plus a hash of the build inputs, so separate make runs on the same
+# sources agree on it and stages can be run one at a time.
 # Computed once and exported, so the recursive make calls in `ci` reuse it.
 ifeq ($(origin REV),undefined)
   GIT_SHORT := $(shell git rev-parse --short=12 HEAD 2>/dev/null)
   ifneq ($(GIT_SHORT),)
     REV := $(GIT_SHORT)$(shell git diff --quiet HEAD -- 2>/dev/null || echo -dirty)
   else
-    REV := $(shell date -u +%Y%m%d%H%M%S)
+    SHA256_CMD := $(if $(shell command -v sha256sum 2>/dev/null),sha256sum,shasum -a 256)
+    REV := src-$(shell cat app/Dockerfile app/main.py | $(SHA256_CMD) | cut -c1-12)
   endif
 endif
 GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null)
