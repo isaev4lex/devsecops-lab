@@ -7,9 +7,15 @@ endif
 REGISTRY := $(shell echo $(ART_URL) | sed 's#https\?://##')
 IMAGE_NAME := devsecops-app
 IMG := $(REGISTRY)/docker-local/$(IMAGE_NAME)
-REV := $(shell git rev-parse --short HEAD 2>/dev/null || date +%Y%m%d%H%M%S)
-ifneq (,$(wildcard .rev))
-REV := $(shell cat .rev)
+# Image tag: the short git commit, plus "-dirty" when tracked files have
+# uncommitted changes. Outside a git checkout it falls back to a UTC timestamp.
+ifeq ($(origin REV),undefined)
+  GIT_SHORT := $(shell git rev-parse --short=12 HEAD 2>/dev/null)
+  ifneq ($(GIT_SHORT),)
+    REV := $(GIT_SHORT)$(shell git diff --quiet HEAD -- 2>/dev/null || echo -dirty)
+  else
+    REV := $(shell date -u +%Y%m%d%H%M%S)
+  endif
 endif
 export REV
 

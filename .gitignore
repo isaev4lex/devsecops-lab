@@ -1,13 +1,18 @@
 # Python
 __pycache__/
 *.pyc
+.venv/
 venv/
+.pytest_cache/
 
-# Environment
+# Local configuration (credentials). Copy .env.example to .env.
 .env
-# Artifacts
-trivy.json
-sbom.cdx.json
 
-reports/
-sbom/
+# Pipeline outputs (image tarball, scan results, SBOM, reports)
+build/
+
+# Scanner cache (Trivy vulnerability DB)
+.cache/
+
+# Old revision file. The tag now comes from git; never commit it.
+.rev

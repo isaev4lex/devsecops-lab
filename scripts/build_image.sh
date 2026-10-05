@@ -24,5 +24,3 @@ docker build \
   .
 
 echo "Image built: ${IMG}:${REV}"
-echo "${REV}" > .rev
-echo "Saved revision to .rev: ${REV}"
