@@ -24,7 +24,8 @@ For every image the pipeline pushes:
 - **Same bytes as scanned.** The scanners read a `docker save` tarball. Before
   pushing, `publish` checks that the tarball's config digest equals the image
   ID Trivy recorded, loads that tarball, pushes it, then reads the manifest back
-  from the registry and checks the config digest again.
+  from the registry with `docker buildx imagetools` and checks the config digest
+  again. Without buildx, `publish` stops before pushing.
 - **Evidence kept with it.** Scan JSON, SARIF, SBOM, gate decision and a
   Markdown report sit in `build/`, in the CI run artifacts, and in JFrog next
   to the image when publishing there.
@@ -114,8 +115,8 @@ configuration error.
 
 ## Run it locally (no accounts)
 
-Requirements: Docker (Docker Desktop, Docker Engine or colima), GNU Make 3.81 or
-newer, bash, jq, curl, python3.
+Requirements: Docker (Docker Desktop, Docker Engine or colima) with the buildx
+plugin, GNU Make 3.81 or newer, bash, jq, curl, python3.
 
 ```sh
 make ci

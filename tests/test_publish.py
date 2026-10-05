@@ -165,6 +165,15 @@ def test_fails_when_the_registry_returns_another_image(ws):
     assert not (ws.out / "publish.json").exists()
 
 
+def test_refuses_before_pushing_when_the_push_cannot_be_verified(ws):
+    ws.env["DOCKER_STUB_NO_BUILDX"] = "1"
+    assert gate(ws).returncode == 0
+    proc = run(ws, "publish.sh")
+    assert proc.returncode == 1
+    assert "docker buildx is needed" in proc.stderr
+    assert not pushed(ws)
+
+
 def test_publish_none_pushes_nothing(ws):
     ws.env["PUBLISH"] = "none"
     proc = run(ws, "publish.sh")

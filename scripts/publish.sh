@@ -10,8 +10,8 @@
 # evaluated the current build/trivy.json (gate.json records its SHA-256), and
 # that the image in build/image.tar is the one Trivy scanned (same config
 # digest). It then loads that tarball and pushes it, so the bytes pushed are the
-# bytes scanned, and reads the manifest back from the registry to check the
-# config digest again.
+# bytes scanned, and reads the manifest back from the registry (docker buildx
+# imagetools, required) to check the config digest again.
 # Writes build/publish.json with the pushed digest.
 set -euo pipefail
 # shellcheck source=scripts/lib.sh
@@ -47,7 +47,11 @@ built="$(tarball_config_digest "$OUT/image.tar")" || die "cannot read image conf
 [ "$scanned" = "$built" ] \
   || die "image.tar (${built}) is not the scanned image (${scanned}); run 'make scan gate' again"
 
-# 4. Load exactly those bytes and tag them for the destination.
+# 4. The pushed image is read back with buildx; check for it before pushing anything.
+docker buildx version >/dev/null 2>&1 \
+  || die "docker buildx is needed to verify the pushed image (it ships with Docker Desktop and Docker Engine)"
+
+# 5. Load exactly those bytes and tag them for the destination.
 src="${IMAGE_NAME}:${REV}"
 docker load --quiet --input "$OUT/image.tar" >/dev/null
 dest_repo="$(destination_repo)"
@@ -93,10 +97,6 @@ push_and_get_digest() {
 # the scanned image ID. Handles both a single manifest and an index.
 verify_pushed() {
   local ref="$1" manifest child config
-  if ! docker buildx version >/dev/null 2>&1; then
-    log "WARN: docker buildx not available, skipping the read-back check"
-    return 0
-  fi
   manifest="$(docker buildx imagetools inspect --raw "$ref")" || die "cannot read back ${ref##*/}"
   child="$(jq -r '[.manifests[]? | select(.platform.os != "unknown")][0].digest // empty' <<<"$manifest")"
   if [ -n "$child" ]; then
