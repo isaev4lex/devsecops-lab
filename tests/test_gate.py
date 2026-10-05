@@ -43,6 +43,14 @@ def scan(*vulns, secrets=()):
     return {"SchemaVersion": 2, "ArtifactName": "image.tar", "ArtifactType": "container_image", "Results": results}
 
 
+def gate_env(**env):
+    # Drop policy settings that a developer's .env (exported by make) or CI may set.
+    environment = {k: v for k, v in os.environ.items()
+                   if k not in ("FAIL_ON_SEVERITY", "FAIL_ON_FIXABLE_SEVERITY", "GATE_RESULT", "GITHUB_ACTIONS")}
+    environment.update(GATE_TODAY=TODAY, **env)
+    return environment
+
+
 def run_gate(tmp_path, report, ignore=None, **env):
     scan_file = tmp_path / "trivy.json"
     scan_file.write_text(json.dumps(report))
@@ -51,10 +59,7 @@ def run_gate(tmp_path, report, ignore=None, **env):
         ignore_file = tmp_path / ".trivyignore"
         ignore_file.write_text(ignore)
         args.append(str(ignore_file))
-    environment = {k: v for k, v in os.environ.items()
-                   if k not in ("FAIL_ON_SEVERITY", "FAIL_ON_FIXABLE_SEVERITY", "GATE_RESULT", "GITHUB_ACTIONS")}
-    environment.update(GATE_TODAY=TODAY, **env)
-    proc = subprocess.run(args, capture_output=True, text=True, env=environment, check=False)
+    proc = subprocess.run(args, capture_output=True, text=True, env=gate_env(**env), check=False)
     result_file = tmp_path / "gate.json"
     result = json.loads(result_file.read_text()) if result_file.exists() else None
     return proc, result
@@ -144,8 +149,20 @@ def test_missing_ignore_file_is_allowed(tmp_path):
     scan_file = tmp_path / "trivy.json"
     scan_file.write_text(json.dumps(scan()))
     proc = subprocess.run(["bash", str(GATE), str(scan_file), str(tmp_path / "absent")],
-                          capture_output=True, text=True, env={**os.environ, "GATE_TODAY": TODAY}, check=False)
+                          capture_output=True, text=True, env=gate_env(), check=False)
     assert proc.returncode == 0
+    assert "no waiver file" in proc.stderr
+
+
+def test_repository_waiver_file_is_valid(tmp_path):
+    # The committed .trivyignore must parse, so a bad entry fails in the test job
+    # rather than at the gate stage of the pipeline.
+    scan_file = tmp_path / "trivy.json"
+    scan_file.write_text(json.dumps(scan()))
+    waivers = GATE.parent.parent / ".trivyignore"
+    proc = subprocess.run(["bash", str(GATE), str(scan_file), str(waivers)],
+                          capture_output=True, text=True, env=gate_env(), check=False)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
 
 
 @pytest.mark.parametrize(
