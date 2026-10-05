@@ -16,25 +16,6 @@ for stale in image.tar trivy.json sbom.cdx.json trivy.sarif gate.json publish.js
   rm -f "${OUT:?}/${stale}"
 done
 
-# Source URL for the OCI label, normalised to https and stripped of any
-# credentials that may be embedded in the remote URL.
-source_url() {
-  local url
-  if [ -n "${GITHUB_SERVER_URL:-}" ] && [ -n "${GITHUB_REPOSITORY:-}" ]; then
-    printf '%s/%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY"
-    return
-  fi
-  url="$(git config --get remote.origin.url 2>/dev/null || true)"
-  [ -n "$url" ] || { echo unknown; return; }
-  if [[ $url =~ ^git@([^:]+):(.+)$ ]]; then
-    url="https://${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
-  fi
-  if [[ $url =~ ^(https?://)[^/@]*@(.*)$ ]]; then
-    url="${BASH_REMATCH[1]}${BASH_REMATCH[2]}"
-  fi
-  printf '%s\n' "${url%.git}"
-}
-
 ref="${IMAGE_NAME}:${REV}"
 log "building ${ref}"
 docker build \

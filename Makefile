@@ -105,7 +105,7 @@ lint-workflows: ## actionlint on .github/workflows (Docker, pinned image, no net
 		--security-opt no-new-privileges --user "$$(id -u):$$(id -g)" \
 		--volume "$(CURDIR):/repo:ro" --workdir /repo $(ACTIONLINT_IMAGE) -color=false
 
-test: ## pytest (app endpoints, gate policy, report)
+test: ## pytest (app, gate policy, publish checks, SARIF, shell helpers, report)
 	$(PYTHON) -m pytest
 
 check: lint test ## lint + test

@@ -161,9 +161,10 @@ The tests cover the app endpoints and healthcheck command, the gate policy
 (thresholds, secrets, waivers and their expiry, malformed input, the committed
 `.trivyignore`) by running `gate.sh` against generated Trivy reports, the
 checks `publish.sh` makes before and after a push (failed or stale gate,
-unscanned tarball, wrong image read back) with `docker` replaced by a stub,
-and the report rendering. They do not need Docker; `make ci` is the
-end-to-end check.
+unscanned tarball, wrong image read back) and the SARIF rewrite with `docker`
+replaced by a stub, the `lib.sh` helpers (tarball config digest, JFrog host
+and its log mask, credentials stripped from the source URL label), and the
+report rendering. They do not need Docker; `make ci` is the end-to-end check.
 
 ## Publish to JFrog Artifactory
 
@@ -312,7 +313,8 @@ tests/               pytest: app, gate policy, report
   actionlint pin in the `Makefile` are not seen by Dependabot and have to be
   bumped by hand.
 - The JFrog and signing paths need credentials, so pull request CI does not
-  exercise them.
+  run them against a real registry. The tests run `publish.sh` in JFrog mode
+  with `docker` stubbed; signing is not tested.
 - The local registry is plain HTTP on 127.0.0.1 without authentication. It is
   meant to be thrown away.
 - Scripts need bash, jq and Docker; Windows outside WSL is not supported.

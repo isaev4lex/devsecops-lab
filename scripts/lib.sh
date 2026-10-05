@@ -106,6 +106,27 @@ tarball_config_digest() {
   printf 'sha256:%s\n' "$config"
 }
 
+# Source repository URL for the image's OCI label: the GitHub repository when
+# running in Actions, otherwise the origin remote, normalised to https and
+# stripped of any user:token@ embedded in it (the label is public).
+source_url() {
+  local url
+  if [ -n "${GITHUB_SERVER_URL:-}" ] && [ -n "${GITHUB_REPOSITORY:-}" ]; then
+    printf '%s/%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY"
+    return
+  fi
+  url="$(git config --get remote.origin.url 2>/dev/null || true)"
+  [ -n "$url" ] || { echo unknown; return; }
+  if [[ $url =~ ^git@([^:]+):(.+)$ ]]; then
+    url="https://${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
+  fi
+  # Up to the last @ before the path, in case the password itself contains one.
+  if [[ $url =~ ^(https?://)[^/]*@(.*)$ ]]; then
+    url="${BASH_REMATCH[1]}${BASH_REMATCH[2]}"
+  fi
+  printf '%s\n' "${url%.git}"
+}
+
 # Host part of ART_URL, e.g. https://example.jfrog.io/ -> example.jfrog.io
 art_host() {
   local host="${ART_URL#http://}"
