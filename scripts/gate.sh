@@ -9,7 +9,8 @@
 #
 # Waivers: an optional ignore file in Trivy's .trivyignore format, one entry per
 # line: "<ID> exp:YYYY-MM-DD", with a comment saying why. Every entry must have
-# an expiry date. A waiver applies through its date; after that the finding
+# an expiry date. As in Trivy, a waiver stops applying on its expiry date (UTC):
+# "exp:2026-12-31" covers scans up to 2026-12-30. From then on the finding
 # blocks again and the gate prints the expired entry.
 #
 # Usage: gate.sh <trivy.json> [ignore-file]
@@ -90,8 +91,8 @@ run_to_file "$RESULT" jq \
   ($fail_on | rank) as $any_min
   | ($fail_on_fixable | rank) as $fix_min
   | (.Metadata.ImageID // null) as $image_id
-  | ($waivers | map(select(.expires >= $today))) as $active
-  | ($waivers | map(select(.expires < $today))) as $expired
+  | ($waivers | map(select(.expires > $today))) as $active
+  | ($waivers | map(select(.expires <= $today))) as $expired
   | ($active | map({key: .id, value: .expires}) | from_entries) as $until
   | [ .Results[]? as $r
       | ( ($r.Vulnerabilities // [])[]

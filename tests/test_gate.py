@@ -140,9 +140,16 @@ def test_active_waiver_unblocks_finding(tmp_path):
     assert result["waived"][0]["waived_until"] == "2026-12-31"
 
 
-def test_waiver_applies_through_its_expiry_date(tmp_path):
-    proc, _ = run_gate(tmp_path, scan(vuln("CVE-1", "CRITICAL")), ignore="CVE-1 exp:%s\n" % TODAY)
+def test_waiver_applies_the_day_before_its_expiry_date(tmp_path):
+    proc, _ = run_gate(tmp_path, scan(vuln("CVE-1", "CRITICAL")), ignore="CVE-1 exp:2026-06-02\n")
     assert proc.returncode == 0
+
+
+def test_waiver_stops_applying_on_its_expiry_date(tmp_path):
+    # Same rule as `trivy --ignorefile`, so both read the file the same way.
+    proc, result = run_gate(tmp_path, scan(vuln("CVE-1", "CRITICAL")), ignore="CVE-1 exp:%s\n" % TODAY)
+    assert proc.returncode == 2
+    assert result["expired_waivers"] == [{"id": "CVE-1", "expires": TODAY, "line": 1}]
 
 
 def test_expired_waiver_blocks_again(tmp_path):

@@ -2,8 +2,8 @@
 # format, so `trivy --ignorefile .trivyignore` reads the same file.
 #
 # One finding ID per line, followed by an expiry date. The gate rejects entries
-# without one, and an entry stops applying after its date, so every waiver comes
-# back for review. Write the reason, the owner and a ticket in the comment above
+# without one, and an entry stops applying on its date (UTC), as in Trivy, so
+# every waiver comes back for review. Write the reason, the owner and a ticket in the comment above
 # the entry. Secrets can be waived by their Trivy rule ID the same way.
 #
 # Example:

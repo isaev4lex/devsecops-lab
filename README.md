@@ -105,8 +105,9 @@ CVE-2026-12345 exp:2026-12-31
 
 - Every entry needs `exp:YYYY-MM-DD`; an entry without one, or with an invalid
   date, is a configuration error (exit 1).
-- A waiver applies through its expiry date. After that the finding blocks
-  again and the gate prints the expired entry.
+- A waiver stops applying on its expiry date (UTC), the same rule Trivy uses:
+  `exp:2026-12-31` covers scans up to 2026-12-30. From then on the finding
+  blocks again and the gate prints the expired entry.
 - Entries that match no blocking finding are reported so they can be removed.
 - Waived findings are listed in `gate.json` and in the report, not hidden.
 
