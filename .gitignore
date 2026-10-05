@@ -1,18 +1,38 @@
-# Python
+# Python bytecode, virtualenvs and tool caches
 __pycache__/
-*.pyc
+*.py[cod]
 .venv/
 venv/
+env/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
 
 # Local configuration (credentials). Copy .env.example to .env.
 .env
+.env.*
+!.env.example
 
-# Pipeline outputs (image tarball, scan results, SBOM, reports)
+# Pipeline outputs (image tarball, scan results, SBOM, SARIF, gate, reports)
 build/
+dist/
 
 # Scanner cache (Trivy vulnerability DB)
 .cache/
 
 # Old revision file. The tag now comes from git; never commit it.
 .rev
+
+# Runtime and editor files
+*.log
+*.pid
+*.tmp
+*.swp
+*~
+.DS_Store
+.idea/
+.vscode/
