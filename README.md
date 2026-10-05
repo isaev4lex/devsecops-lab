@@ -6,7 +6,9 @@ A container supply-chain pipeline driven by `make`. It builds a small Python
 service into an image, smoke-tests it, scans it with Trivy, writes a CycloneDX
 SBOM with Syft, applies a vulnerability gate, and only then pushes the image.
 By default it pushes to a throwaway registry on your machine, so `make ci` needs
-Docker and nothing else. JFrog Artifactory is an optional target.
+no accounts or credentials, only Docker and a few common command-line tools
+(listed under [Run it locally](#run-it-locally-no-accounts)). JFrog Artifactory
+is an optional target.
 
 ## What a published image comes with
 
@@ -84,9 +86,12 @@ rule off. Example: `make gate FAIL_ON_SEVERITY=HIGH`.
 Why this default: a HIGH finding in a base-image package with no fixed version
 leaves nothing to change in this repository, so failing on it would keep the
 pipeline red without a way to make it green. A HIGH finding with a fix means
-the pinned base image is behind, and the fix is to bump its digest. CRITICAL
-findings fail either way and need a fix, a different base, or a waiver with an
-expiry date.
+the pinned base image is behind, and the fix is to bump its digest. The base
+has no package manager, so a Debian fix only arrives with a rebuilt distroless
+image: if Debian has fixed a package but no new distroless digest exists yet,
+add a short-lived waiver (one or two weeks) and remove it with the digest bump
+Dependabot proposes. CRITICAL findings fail either way and need a fix, a
+different base, or a waiver with an expiry date.
 
 As of 2026-10-05 the pinned base image has 0 CRITICAL and 26 HIGH findings, none
 of them with a fixed version in Debian, so the gate passes. A weekly CI run
@@ -118,7 +123,8 @@ configuration error.
 ## Run it locally (no accounts)
 
 Requirements: Docker (Docker Desktop, Docker Engine or colima) with the buildx
-plugin, GNU Make 3.81 or newer, bash, jq, curl, python3.
+plugin, GNU Make 3.81 or newer, bash, jq, curl, python3. The tests need
+Python 3.11 or newer (below).
 
 ```sh
 make ci
@@ -148,10 +154,12 @@ make clean-cache              # remove the Trivy database cache
 ```
 
 Tests and lint (`shellcheck` from `brew install shellcheck` or
-`apt-get install shellcheck`):
+`apt-get install shellcheck`). `requirements-dev.txt` is hash-locked for
+Python 3.11 or newer, and the CI test job uses 3.13; the `/usr/bin/python3`
+that ships with macOS (3.9) cannot install it.
 
 ```sh
-python3 -m venv .venv
+python3.13 -m venv .venv      # or any python3.11+
 .venv/bin/pip install --require-hashes -r requirements-dev.txt
 make check                    # shellcheck + pytest
 make lint-workflows           # actionlint on the CI workflow (runs in Docker)
@@ -286,7 +294,7 @@ HIGH and CRITICAL findings:
 ```
 app/                 main.py (stdlib HTTP service), Dockerfile, .dockerignore
 scripts/             one script per stage; lib.sh holds helpers and pinned tool images
-tests/               pytest: app, gate policy, report
+tests/               pytest: app, gate, publish checks, SARIF, lib.sh, report (docker stub in conftest.py)
 .trivyignore         gate waivers (format described in the file)
 .env.example         optional settings and JFrog credentials
 .github/             CI workflow and Dependabot config
@@ -297,6 +305,9 @@ tests/               pytest: app, gate policy, report
 - A gate result is only as current as the Trivy database at scan time. An image
   that passed last week can fail today; the weekly CI run catches that for
   `main`, but images already pushed are not rescanned in the registry.
+- GitHub disables scheduled workflows in a public repository after 60 days
+  without repository activity, so on a quiet repository the weekly rescan
+  stops until it is re-enabled in the Actions tab.
 - Trivy sees OS packages and language package manifests. The app is a single
   stdlib script with no dependencies, so its own code is not analysed: there is
   no SAST or linting of `main.py` beyond the tests.
